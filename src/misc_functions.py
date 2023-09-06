@@ -8,6 +8,8 @@ import copy
 import numpy as np
 from PIL import Image
 import matplotlib.cm as mpl_color_map
+from matplotlib.colors import ListedColormap
+from matplotlib import pyplot as plt
 
 import torch
 from torch.autograd import Variable
@@ -46,7 +48,7 @@ def save_gradient_images(gradient, file_name):
     gradient = gradient - gradient.min()
     gradient /= gradient.max()
     # Save image
-    path_to_file = os.path.join('../results', file_name + '.jpg')
+    path_to_file = os.path.join('../results', file_name + '.png')
     save_image(gradient, path_to_file)
 
 
@@ -91,11 +93,29 @@ def apply_colormap_on_image(org_im, activation, colormap_name):
     heatmap = Image.fromarray((heatmap*255).astype(np.uint8))
     no_trans_heatmap = Image.fromarray((no_trans_heatmap*255).astype(np.uint8))
 
-    # Apply heatmap on iamge
+    # Apply heatmap on image
     heatmap_on_image = Image.new("RGBA", org_im.size)
     heatmap_on_image = Image.alpha_composite(heatmap_on_image, org_im.convert('RGBA'))
     heatmap_on_image = Image.alpha_composite(heatmap_on_image, heatmap)
     return no_trans_heatmap, heatmap_on_image
+
+
+def apply_heatmap(R, sx, sy):
+    """
+        Heatmap code stolen from https://git.tu-berlin.de/gmontavon/lrp-tutorial
+
+        This is (so far) only used for LRP
+    """
+    b = 10*((np.abs(R)**3.0).mean()**(1.0/3))
+    my_cmap = plt.cm.seismic(np.arange(plt.cm.seismic.N))
+    my_cmap[:, 0:3] *= 0.85
+    my_cmap = ListedColormap(my_cmap)
+    plt.figure(figsize=(sx, sy))
+    plt.subplots_adjust(left=0, right=1, bottom=0, top=1)
+    plt.axis('off')
+    heatmap = plt.imshow(R, cmap=my_cmap, vmin=-b, vmax=b, interpolation='nearest')
+    return heatmap
+    # plt.show()
 
 
 def format_np_output(np_arr):
@@ -143,17 +163,26 @@ def preprocess_image(pil_im, resize_im=True):
         Processes image for CNNs
 
     Args:
-        PIL_img (PIL_img): Image to process
+        PIL_img (PIL_img): PIL Image or numpy array to process
         resize_im (bool): Resize to 224 or not
     returns:
         im_as_var (torch variable): Variable that contains processed float tensor
     """
-    # mean and std list for channels (Imagenet)
+    # Mean and std list for channels (Imagenet)
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
+
+    # Ensure or transform incoming image to PIL image
+    if type(pil_im) != Image.Image:
+        try:
+            pil_im = Image.fromarray(pil_im)
+        except Exception as e:
+            print("could not transform PIL_img to a PIL Image object. Please check input.")
+
     # Resize image
     if resize_im:
-        pil_im.thumbnail((224, 224))
+        pil_im = pil_im.resize((224, 224), Image.ANTIALIAS)
+
     im_as_arr = np.float32(pil_im)
     im_as_arr = im_as_arr.transpose(2, 0, 1)  # Convert array to D,W,H
     # Normalize the channels
@@ -221,7 +250,7 @@ def get_example_params(example_index):
         pretrained_model(Pytorch model): Model to use for the operations
     """
     # Pick one of the examples
-    example_list = (('../input_images/snake.jpg', 56),
+    example_list = (('../input_images/snake.png', 56),
                     ('../input_images/cat_dog.png', 243),
                     ('../input_images/spider.png', 72))
     img_path = example_list[example_index][0]

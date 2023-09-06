@@ -1,7 +1,7 @@
 """
-Created on Thu Oct 26 11:06:51 2017
+Created on Mon Jul 5 12:39:11 2021
 
-@author: Utku Ozbulak - github.com/utkuozbulak
+@author: Peng-Tao Jiang - github.com/PengtaoJiang
 """
 from PIL import Image
 import numpy as np
@@ -46,7 +46,7 @@ class CamExtractor():
         return conv_output, x
 
 
-class GradCam():
+class LayerCam():
     """
         Produces class activation map
     """
@@ -76,28 +76,15 @@ class GradCam():
         # Get convolution outputs
         target = conv_output.data.numpy()[0]
         # Get weights from gradients
-        weights = np.mean(guided_gradients, axis=(1, 2))  # Take averages for each gradient
-        # Create empty numpy array for cam
-        cam = np.ones(target.shape[1:], dtype=np.float32)
-        # Have a look at issue #11 to check why the above is np.ones and not np.zeros
-        # Multiply each weight with its conv output and then, sum
-        for i, w in enumerate(weights):
-            cam += w * target[i, :, :]
-        cam = np.maximum(cam, 0)
+        weights = guided_gradients
+        weights[weights < 0] = 0 # discard negative gradients
+        # Element-wise multiply the weight with its conv output and then, sum
+        cam = np.sum(weights * target, axis=0)
         cam = (cam - np.min(cam)) / (np.max(cam) - np.min(cam))  # Normalize between 0-1
         cam = np.uint8(cam * 255)  # Scale between 0-255 to visualize
         cam = np.uint8(Image.fromarray(cam).resize((input_image.shape[2],
                        input_image.shape[3]), Image.ANTIALIAS))/255
-        # ^ I am extremely unhappy with this line. Originally resizing was done in cv2 which
-        # supports resizing numpy matrices with antialiasing, however,
-        # when I moved the repository to PIL, this option was out of the window.
-        # So, in order to use resizing with ANTIALIAS feature of PIL,
-        # I briefly convert matrix to PIL image and then back.
-        # If there is a more beautiful way, do not hesitate to send a PR.
 
-        # You can also use the code below instead of the code line above, suggested by @ ptschandl
-        # from scipy.ndimage.interpolation import zoom
-        # cam = zoom(cam, np.array(input_image[0].shape[1:])/np.array(cam.shape))
         return cam
 
 
@@ -106,10 +93,10 @@ if __name__ == '__main__':
     target_example = 0  # Snake
     (original_image, prep_img, target_class, file_name_to_export, pretrained_model) =\
         get_example_params(target_example)
-    # Grad cam
-    grad_cam = GradCam(pretrained_model, target_layer=11)
+    # Layer cam
+    layer_cam = LayerCam(pretrained_model, target_layer=9)
     # Generate cam mask
-    cam = grad_cam.generate_cam(prep_img, target_class)
+    cam = layer_cam.generate_cam(prep_img, target_class)
     # Save mask
     save_class_activation_images(original_image, cam, file_name_to_export)
-    print('Grad cam completed')
+    print('Layer cam completed')
